@@ -43,11 +43,12 @@ def main(_argv):
     IMAGE_H = 800
     IMAGE_W = 600
 
-    src = np.float32([[1167,0], [19,5],  [50,1021], [1831,0]])
+    src = np.float32([[1167,0], [19,521], [850,1021], [1831,0]])
     dst = np.float32([[0,0], [0,IMAGE_H], [IMAGE_W,IMAGE_H], [IMAGE_W, 0]])
-    M = cv2.getPerspectiveTransform(src, dst) # The transformation matrix
+    M = cv2.getPerspectiveTransform(src, dst) 
     Minv = cv2.getPerspectiveTransform(dst, src) # Inverse transformation
-
+    # print(M)
+    # exit()
     max_cosine_distance = 0.4
     nn_budget = None
     nms_max_overlap = 1.0
@@ -96,7 +97,8 @@ def main(_argv):
         height = int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = int(vid.get(cv2.CAP_PROP_FPS))
         codec = cv2.VideoWriter_fourcc(*FLAGS.output_format)
-        out = cv2.VideoWriter(FLAGS.output, codec, fps, (width, height))
+        fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+        out = cv2.VideoWriter('output.avi',fourcc, 10.0, (IMAGE_W,IMAGE_H))
 
     frame_num = 0
     # while video is running
@@ -110,7 +112,7 @@ def main(_argv):
             print('Video has ended or failed, try a different video format!')
             break
         frame_num +=1
-        n_img = cv2.warpPerspective(frame, M, (IMAGE_W, IMAGE_H))
+        # n_img = cv2.warpPerspective(frame, M, (IMAGE_W, IMAGE_H))
         print('Frame #: ', frame_num)
         frame_size = frame.shape[:2]
         image_data = cv2.resize(frame, (input_size, input_size))
@@ -232,7 +234,9 @@ def main(_argv):
             cntr = ((bbox[0] + bbox[2])//2, (bbox[1] + bbox[3])//2)
             cntrs.append(cntr)
 
-        warped_img = cv2.warpPerspective(np.zeros(frame.shape), M, (IMAGE_W, IMAGE_H))
+        # warped_img = cv2.warpPerspective(frame, M, (IMAGE_W, IMAGE_H))
+        # print(warped_img.shape)
+        ext_img = np.zeros((IMAGE_H, IMAGE_W, 3))
         list_points_to_detect = np.float32(lst).reshape(-1, 1, 2)
         transformed_points = cv2.perspectiveTransform(list_points_to_detect, M)
         print(f'list : {lst}')
@@ -241,8 +245,9 @@ def main(_argv):
         try:
             for i in range(0,transformed_points.shape[0]):
                 # transformed_points_list.append([transformed_points[i][0][0],transformed_points[i][0][1]])
-                cv2.circle(warped_img, (transformed_points[i][0][0],transformed_points[i][0][1]), 2, (0, 0, 255))
-                # cv2.rectangle(frame, (int(bbox[0]), int(bbox[1]-30)), (int(bbox[0])+(len(class_name)+len(str(track.track_id)))*17, int(bbox[1])), color, -1)
+                points = (transformed_points[i][0][0],transformed_points[i][0][1])
+                cv2.circle(ext_img, points , 5, (0,0,255), -1)
+                cv2.circle(ext_img, points, 40, (0, 0, 255), 1)
 
         except:
             pass        
@@ -257,16 +262,18 @@ def main(_argv):
         # calculate frames per second of running detections
         fps = 1.0 / (time.time() - start_time)
         print("FPS: %.2f" % fps)
-        result = np.asarray(warped_img)
-        # result = cv2.cvtColor(warped_img, cv2.COLOR_RGB2BGR)
+        # result = np.asarray(ext_img)
+        # result = cv2.cvtColor(ext_img, cv2.COLOR_RGB2BGR)
         
         if not FLAGS.dont_show:
-            cv2.imshow("Output Video", warped_img)
+            cv2.imshow("Output Video", ext_img)
         
         # if output flag is set, save video file
         if FLAGS.output:
-            out.write(result)
+            out.write(ext_img)
         if cv2.waitKey(1) & 0xFF == ord('q'): break
+    vid.release()
+    out.release()
     cv2.destroyAllWindows()
 
 if __name__ == '__main__':

@@ -43,7 +43,7 @@ def main(_argv):
     IMAGE_H = 800
     IMAGE_W = 600
 
-    src = np.float32([[1167,0], [19,521], [850,1021], [1831,0]])
+    src = np.float32([[1167,0], [19,5],  [50,1021], [1831,0]])
     dst = np.float32([[0,0], [0,IMAGE_H], [IMAGE_W,IMAGE_H], [IMAGE_W, 0]])
     M = cv2.getPerspectiveTransform(src, dst) # The transformation matrix
     Minv = cv2.getPerspectiveTransform(dst, src) # Inverse transformation
@@ -101,7 +101,6 @@ def main(_argv):
     frame_num = 0
     # while video is running
     while True:
-        n_img = np.zeros((IMAGE_W, IMAGE_H))
         cntrs = []
         return_value, frame = vid.read()
         if return_value:
@@ -111,6 +110,7 @@ def main(_argv):
             print('Video has ended or failed, try a different video format!')
             break
         frame_num +=1
+        n_img = cv2.warpPerspective(frame, M, (IMAGE_W, IMAGE_H))
         print('Frame #: ', frame_num)
         frame_size = frame.shape[:2]
         image_data = cv2.resize(frame, (input_size, input_size))
@@ -209,7 +209,7 @@ def main(_argv):
         # Call the tracker
         tracker.predict()
         tracker.update(detections)
-
+        lst = []
         # update tracks
         for track in tracker.tracks:
             if not track.is_confirmed() or track.time_since_update > 1:
@@ -220,30 +220,48 @@ def main(_argv):
         # draw bbox on screen
             color = colors[int(track.track_id) % len(colors)]
             color = [i * 255 for i in color]
-            cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), color, 2)
-            cv2.rectangle(frame, (int(bbox[0]), int(bbox[1]-30)), (int(bbox[0])+(len(class_name)+len(str(track.track_id)))*17, int(bbox[1])), color, -1)
-            cv2.putText(frame, class_name + "-" + str(track.track_id),(int(bbox[0]), int(bbox[1]-10)),0, 0.75, (255,255,255),2)
-
-        # if enable info flag then print details about each track
+            # cv2.rectangle(frame, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), color, 2)
+            # cv2.rectangle(frame, (int(bbox[0]), int(bbox[1]-30)), (int(bbox[0])+(len(class_name)+len(str(track.track_id)))*17, int(bbox[1])), color, -1)
+            # cv2.putText(frame, class_name + "-" + str(track.track_id),(int(bbox[0]), int(bbox[1]-10)),0, 0.75, (255,255,255),2)
+            # print(bbox.shape)
+            lst.append(((bbox[0] + bbox[2])//2, (bbox[1]+bbox[3])//2))
+        
+            # if enable info flag then print details about each track
             if FLAGS.info:
                 print("Tracker ID: {}, Class: {},  BBox Coords (xmin, ymin, xmax, ymax): {}".format(str(track.track_id), class_name, (int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3]))))
             cntr = ((bbox[0] + bbox[2])//2, (bbox[1] + bbox[3])//2)
             cntrs.append(cntr)
+
+        warped_img = cv2.warpPerspective(np.zeros(frame.shape), M, (IMAGE_W, IMAGE_H))
+        list_points_to_detect = np.float32(lst).reshape(-1, 1, 2)
+        transformed_points = cv2.perspectiveTransform(list_points_to_detect, M)
+        print(f'list : {lst}')
+        print(f'\n transformed : {transformed_points}')
+
+        try:
+            for i in range(0,transformed_points.shape[0]):
+                # transformed_points_list.append([transformed_points[i][0][0],transformed_points[i][0][1]])
+                cv2.circle(warped_img, (transformed_points[i][0][0],transformed_points[i][0][1]), 2, (0, 0, 255))
+                # cv2.rectangle(frame, (int(bbox[0]), int(bbox[1]-30)), (int(bbox[0])+(len(class_name)+len(str(track.track_id)))*17, int(bbox[1])), color, -1)
+
+        except:
+            pass        
+        
         qwe =  np.float32(cntrs).reshape(-1, 1, 2)
 
         n_cntr = cv2.perspectiveTransform(qwe, M)
-        print(n_cntr)
-        for sntr in n_cntr:
-            cv2.circle(n_img, sntr, 2, (0, 0, 255), -1)
+        # print(n_cntr)
+        # for sntr in n_cntr:
+        #     cv2.circle(n_img, sntr, 2, (0, 0, 255), -1)
             
         # calculate frames per second of running detections
         fps = 1.0 / (time.time() - start_time)
         print("FPS: %.2f" % fps)
-        result = np.asarray(frame)
-        result = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        result = np.asarray(warped_img)
+        # result = cv2.cvtColor(warped_img, cv2.COLOR_RGB2BGR)
         
         if not FLAGS.dont_show:
-            cv2.imshow("Output Video", n_img)
+            cv2.imshow("Output Video", warped_img)
         
         # if output flag is set, save video file
         if FLAGS.output:

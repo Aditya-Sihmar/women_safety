@@ -1,3 +1,4 @@
+
 import sys
 sys.path.insert(0, './yolov5')
 
@@ -23,7 +24,7 @@ import torch.backends.cudnn as cudnn
 
 palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
 
-MIN_DISTANCE = 260
+MIN_DISTANCE = 540
 names = None
 def xyxy_to_xywh(*xyxy):
     """" Calculates the relative bounding box from absolute pixel values. """
@@ -60,6 +61,7 @@ def compute_color_for_labels(label):
 def social_dist(xyxy, identities=[]):
     violate = []
     violate_indxs = set()
+    dists = []
     top_cors = []
     bot_cors = []
 
@@ -77,25 +79,31 @@ def social_dist(xyxy, identities=[]):
                 # check to see if the distance between any two
                 # top pairs is less than the configured number
                 # of pixels
-                if (D_top[i, j] + D_bot[i, j])//2 < MIN_DISTANCE:
+                dis = (D_top[i,j] + D_bot[i,j])//2
+                if dis <= MIN_DISTANCE:
                     # update our violation set with the indexes of
                     # the centroid pairs
+                    print('Social distance violated')
                     violate_indxs.add(i)
                     violate_indxs.add(j)
                     violate.append([i, j])
+                    dists.append(dis)
+                else:
+                    print(dis)
 
-    return violate, violate_indxs
+    return violate, violate_indxs, dists
 
 def draw_boxes(img, bbox, classes, identities=None, offset=(0, 0)):
 
-    violate, violate_indxs = social_dist(bbox, identities)
-    x0 = 4
-    y0 = 4
-    ofset = 2
-    for pair in violate:
-        label = f'Person {identities[pair[0]]} and Person {identities[pair[1]}'
-        t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_PLAIN, 2, 2)[0]
-        cv2.putText(img, label, (x0, y0), cv2.FONT_HERSHEY_PLAIN, 2, [255, 255, 255], 2)
+    violate, violate_indxs, dists = social_dist(bbox, identities)
+    x0 = 40
+    y0 = 80
+    ofset = 4
+    # print(classes.shape)
+    for i, pair in enumerate(violate):
+        label = f'Person {identities[pair[0]]} and Person {identities[pair[1]]} distance: {round((dists[i])*1.5/MIN_DISTANCE, 2)}m'
+        t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_PLAIN, 2.3, 2)[0]
+        cv2.putText(img, label, (x0, y0), cv2.FONT_HERSHEY_PLAIN, 2.3, [255, 255, 255], 2)
         y0 += t_size[1] + ofset
 
     for i, box in enumerate(bbox):
@@ -108,10 +116,11 @@ def draw_boxes(img, bbox, classes, identities=None, offset=(0, 0)):
         id = int(identities[i]) if identities is not None else 0
         color = compute_color_for_labels(id)
         label = '{}{:d}'.format("", id)
-        label = f'{names(classes[i])} {id} '
+        if i < classes.shape[0]:
+            label = f'{names[int(classes[i])]} {id} '
         color = [0, 255, 0]
         if i in violate_indxs:
-            color = [255, 0, 0]
+            color = [0, 0, 255]
         t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_PLAIN, 2, 2)[0]
         cv2.rectangle(img, (x1, y1), (x2, y2), color, 3)
         cv2.rectangle(
@@ -208,22 +217,24 @@ def detect(opt):
 
                 # Print results
                 classes = det[:, -1]
+                classes = classes.to('cpu').numpy()
+                print(classes.shape)
                 for c in det[:, -1].unique():
                     n = (det[:, -1] == c).sum()  # detections per class
                     s += '%g %ss, ' % (n, names[int(c)])  # add to string
 
                 xywh_bboxs = []
                 confs = []
-                top_cors = []
-                bot_cors = []
+                # top_cors = []
+                # bot_cors = []
                 # Adapt detections to deep sort input format
                 for *xyxy, conf, cls in det:
                     # to deep sort format
                     x_c, y_c, bbox_w, bbox_h = xyxy_to_xywh(*xyxy)
                     xywh_obj = [x_c, y_c, bbox_w, bbox_h]
-                    x1, y1, x2, y2 = *xyxy
-                    top_cors.append([x1, (y1+y2)//2])
-                    bot_cors.append([x2, (y1+y2)//2])
+                    # x1, y1, x2, y2 = *xyxy
+                    # top_cors.append([x1, (y1+y2)//2])
+                    # bot_cors.append([x2, (y1+y2)//2])
                     xywh_bboxs.append(xywh_obj)
                     confs.append([conf.item()])
 
@@ -306,7 +317,7 @@ if __name__ == '__main__':
     parser.add_argument('--save-vid', action='store_true', help='save video tracking results')
     parser.add_argument('--save-txt', action='store_true', help='save MOT compliant results to *.txt')
     # class 0 is person, 1 is bycicle, 2 is car... 79 is oven
-    parser.add_argument('--classes', nargs='+', default=[0], type=int, help='filter by class')
+    parser.add_argument('--classes', nargs='+', default=[0, 1], type=int, help='filter by class')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument("--config_deepsort", type=str, default="deep_sort_pytorch/configs/deep_sort.yaml")
